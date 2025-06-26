@@ -1,7 +1,9 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Roboto } from 'next/font/google';
+import { motion, useTransform, useMotionValue, Reorder } from "framer-motion";
 import {
   MdAdd as Plus,
   MdClose as X,
@@ -13,6 +15,7 @@ import {
   MdSave as Save,
   MdDescription as FileText,
   MdDelete as Trash2,
+  MdEdit as Edit,
 } from "react-icons/md";
 
 const roboto = Roboto({
@@ -56,7 +59,6 @@ export default function QuizBuilder() {
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showQuestionForm, setShowQuestionForm] = useState(false);
-  const [draggedQuestion, setDraggedQuestion] = useState<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
     "saved",
   );
@@ -129,29 +131,8 @@ export default function QuizBuilder() {
     }
   };
 
-  const reorderQuestions = (fromIndex: number, toIndex: number) => {
-    const updatedQuestions = [...quiz.questions];
-    const [movedQuestion] = updatedQuestions.splice(fromIndex, 1);
-    updatedQuestions.splice(toIndex, 0, movedQuestion);
-    updateQuiz({ questions: updatedQuestions });
-  };
-
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedQuestion(index);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  };
-
-  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
-    e.preventDefault();
-    if (draggedQuestion !== null && draggedQuestion !== dropIndex) {
-      reorderQuestions(draggedQuestion, dropIndex);
-    }
-    setDraggedQuestion(null);
+  const reorderQuestions = (newOrder: Question[]) => {
+    updateQuiz({ questions: newOrder });
   };
 
   const togglePreview = (questionId: string) => {
@@ -159,6 +140,177 @@ export default function QuizBuilder() {
       ...prev,
       [questionId]: !prev[questionId]
     }));
+  };
+
+  const SwipeableQuestionCard = ({ question, index }: { question: Question; index: number }) => {
+    const x = useMotionValue(0);
+    const background = useTransform(
+      x,
+      [-100, -50, 0, 50, 100],
+      ["#ef4444", "#ef4444", "#ffffff", "#3b82f6", "#3b82f6"]
+    );
+    const editOpacity = useTransform(x, [0, 50, 100], [0, 0.5, 1]);
+    const deleteOpacity = useTransform(x, [-100, -50, 0], [1, 0.5, 0]);
+
+    const handleDragEnd = (event: any, info: any) => {
+      const offset = info.offset.x;
+      const velocity = info.velocity.x;
+      
+      // Swipe right to edit (threshold: 60px or velocity > 500)
+      if (offset > 60 || velocity > 500) {
+        setCurrentQuestionIndex(index);
+        setShowQuestionForm(true);
+      }
+      // Swipe left to delete (threshold: -60px or velocity < -500)
+      else if (offset < -60 || velocity < -500) {
+        deleteQuestion(index);
+      }
+      
+      // Reset position
+      x.set(0);
+    };
+
+    return (
+      <div className="relative overflow-hidden rounded-xl">
+        {/* Background indicators */}
+        <motion.div 
+          style={{ backgroundColor: background }}
+          className="absolute inset-0 flex items-center justify-between px-6"
+        >
+          <motion.div 
+            style={{ opacity: deleteOpacity }}
+            className="flex items-center text-white font-semibold"
+          >
+            <Trash2 size={20} className="mr-2" />
+            Delete
+          </motion.div>
+          <motion.div 
+            style={{ opacity: editOpacity }}
+            className="flex items-center text-white font-semibold"
+          >
+            Edit
+            <Edit size={20} className="ml-2" />
+          </motion.div>
+        </motion.div>
+
+        {/* Main card content */}
+        <motion.div
+          drag="x"
+          dragConstraints={{ left: -120, right: 120 }}
+          dragElastic={0.1}
+          style={{ x }}
+          onDragEnd={handleDragEnd}
+          className="relative z-10 bg-gray-50 rounded-xl p-5 border-2 border-transparent hover:border-blue-200 transition-all duration-200 transform hover:scale-[1.02] hover:shadow-md group-hover:bg-white cursor-grab active:cursor-grabbing"
+        >
+          <div className="flex items-start space-x-4">
+            <div className="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 transition-colors">
+              <GripVertical size={16} />
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-3">
+                  <span className="text-sm font-semibold text-gray-900">Question {index + 1}</span>
+                  <span
+                    className={`text-xs px-2 py-1 rounded-full transition-colors ${
+                      question.type === "multiple-choice"
+                        ? "bg-blue-100 text-blue-700"
+                        : question.type === "true-false"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-purple-100 text-purple-700"
+                    }`}
+                  >
+                    {question.type === "multiple-choice"
+                      ? "Multiple Choice"
+                      : question.type === "true-false"
+                        ? "True/False"
+                        : "Image-Based"}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button 
+                    className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePreview(question.id);
+                    }}
+                    title="Preview"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </button>
+                  <button 
+                    className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentQuestionIndex(index);
+                      setShowQuestionForm(true);
+                    }}
+                    title="Edit"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                  <button 
+                    className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded-full hover:bg-red-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteQuestion(index);
+                    }}
+                    title="Delete"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+              
+              <div className="mb-3">
+                <p className="text-gray-800 font-medium mb-2 line-clamp-2">
+                  {question.question || "Untitled question"}
+                </p>
+                {question.type === "image-based" && question.imageUrl && (
+                  <div className="mb-3">
+                    <img 
+                      src={question.imageUrl} 
+                      alt="Question illustration" 
+                      className="w-full h-32 object-cover rounded-lg border border-gray-200"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  </div>
+                )}
+                <div className="text-sm text-gray-500">
+                  <span>{question.question.length}</span>/{CHARACTER_LIMITS.question} characters
+                </div>
+              </div>
+              
+              {question.type === "multiple-choice" && question.options && (
+                <div className="text-sm text-gray-500">
+                  {question.options.filter((opt) => opt.trim()).length} options • 
+                  Correct: Option {(question.correctAnswer as number) + 1}
+                </div>
+              )}
+              
+              {question.type === "true-false" && (
+                <div className="text-sm text-gray-500">
+                  Correct answer: <span className="capitalize">{question.correctAnswer as string}</span>
+                </div>
+              )}
+              
+              {question.type === "image-based" && (
+                <div className="text-sm text-gray-500">
+                  Answer: {question.correctAnswer as string}
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
   };
 
   const QuestionForm = ({
@@ -491,7 +643,7 @@ export default function QuizBuilder() {
       {/* Question List */}
       {!showQuestionForm && (
         <div className="p-4">
-          <div ref={questionListRef} className="space-y-3 pb-20">
+          <div ref={questionListRef} className="pb-20">
             {quiz.questions.length === 0 ? (
               <div className="text-center py-12">
                 <FileText size={48} className="mx-auto text-gray-400 mb-4" />
@@ -503,152 +655,50 @@ export default function QuizBuilder() {
                 </p>
               </div>
             ) : (
-              quiz.questions.map((question, index) => (
-                <div
-                  key={question.id}
-                  className="group"
-                >
-                  {previewMode[question.id] ? (
-                    <div className="animate-in slide-in-from-bottom-4 duration-300">
-                      <QuestionPreview question={question} index={index} />
-                      <div className="flex items-center justify-between mt-3 px-2">
-                        <button
-                          onClick={() => togglePreview(question.id)}
-                          className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                        >
-                          Exit Preview
-                        </button>
-                        <button
-                          onClick={() => {
-                            setCurrentQuestionIndex(index);
-                            setShowQuestionForm(true);
-                          }}
-                          className="text-sm text-gray-600 hover:text-gray-700 font-medium"
-                        >
-                          Edit Question
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, index)}
-                      onDragOver={handleDragOver}
-                      onDrop={(e) => handleDrop(e, index)}
-                      className={`bg-gray-50 rounded-xl p-5 border-2 border-transparent hover:border-blue-200 transition-all duration-200 transform hover:scale-[1.02] hover:shadow-md ${
-                        draggedQuestion === index ? "opacity-50 scale-95" : ""
-                      } group-hover:bg-white`}
-                    >
-                      <div className="flex items-start space-x-4">
-                        <div className="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 transition-colors cursor-grab active:cursor-grabbing">
-                          <GripVertical size={16} />
-                        </div>
-                        
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center space-x-3">
-                              <span className="text-sm font-semibold text-gray-900">Question {index + 1}</span>
-                              <span
-                                className={`text-xs px-2 py-1 rounded-full transition-colors ${
-                                  question.type === "multiple-choice"
-                                    ? "bg-blue-100 text-blue-700"
-                                    : question.type === "true-false"
-                                      ? "bg-green-100 text-green-700"
-                                      : "bg-purple-100 text-purple-700"
-                                }`}
-                              >
-                                {question.type === "multiple-choice"
-                                  ? "Multiple Choice"
-                                  : question.type === "true-false"
-                                    ? "True/False"
-                                    : "Image-Based"}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
-                                className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  togglePreview(question.id);
-                                }}
-                                title="Preview"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                </svg>
-                              </button>
-                              <button 
-                                className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCurrentQuestionIndex(index);
-                                  setShowQuestionForm(true);
-                                }}
-                                title="Edit"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                              </button>
-                              <button 
-                                className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded-full hover:bg-red-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteQuestion(index);
-                                }}
-                                title="Delete"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </div>
-                          
-                          <div className="mb-3">
-                            <p className="text-gray-800 font-medium mb-2 line-clamp-2">
-                              {question.question || "Untitled question"}
-                            </p>
-                            {question.type === "image-based" && question.imageUrl && (
-                              <div className="mb-3">
-                                <img 
-                                  src={question.imageUrl} 
-                                  alt="Question illustration" 
-                                  className="w-full h-32 object-cover rounded-lg border border-gray-200"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = "none";
-                                  }}
-                                />
-                              </div>
-                            )}
-                            <div className="text-sm text-gray-500">
-                              <span>{question.question.length}</span>/{CHARACTER_LIMITS.question} characters
-                            </div>
-                          </div>
-                          
-                          {question.type === "multiple-choice" && question.options && (
-                            <div className="text-sm text-gray-500">
-                              {question.options.filter((opt) => opt.trim()).length} options • 
-                              Correct: Option {(question.correctAnswer as number) + 1}
-                            </div>
-                          )}
-                          
-                          {question.type === "true-false" && (
-                            <div className="text-sm text-gray-500">
-                              Correct answer: <span className="capitalize">{question.correctAnswer as string}</span>
-                            </div>
-                          )}
-                          
-                          {question.type === "image-based" && (
-                            <div className="text-sm text-gray-500">
-                              Answer: {question.correctAnswer as string}
-                            </div>
-                          )}
+              <Reorder.Group
+                axis="y"
+                values={quiz.questions}
+                onReorder={reorderQuestions}
+                className="space-y-3"
+              >
+                {quiz.questions.map((question, index) => (
+                  <Reorder.Item 
+                    key={question.id} 
+                    value={question}
+                    className="group"
+                    whileDrag={{ 
+                      scale: 1.05,
+                      zIndex: 999,
+                      boxShadow: "0 10px 30px rgba(0,0,0,0.2)"
+                    }}
+                  >
+                    {previewMode[question.id] ? (
+                      <div className="animate-in slide-in-from-bottom-4 duration-300">
+                        <QuestionPreview question={question} index={index} />
+                        <div className="flex items-center justify-between mt-3 px-2">
+                          <button
+                            onClick={() => togglePreview(question.id)}
+                            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                          >
+                            Exit Preview
+                          </button>
+                          <button
+                            onClick={() => {
+                              setCurrentQuestionIndex(index);
+                              setShowQuestionForm(true);
+                            }}
+                            className="text-sm text-gray-600 hover:text-gray-700 font-medium"
+                          >
+                            Edit Question
+                          </button>
                         </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              ))
+                    ) : (
+                      <SwipeableQuestionCard question={question} index={index} />
+                    )}
+                  </Reorder.Item>
+                ))}
+              </Reorder.Group>
             )}
           </div>
         </div>
