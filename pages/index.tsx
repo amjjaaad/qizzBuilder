@@ -12,12 +12,12 @@ const Home: NextPage = () => {
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <main className={styles.main}>
-        <h1 className={styles.title}>Welcome to Next.js on Replit!</h1>
+      <main className={`${styles.main} bg-gradient-to-br from-blue-50 to-purple-50`}>
+        <h1 className={`${styles.title} text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600`}>Welcome to Next.js on Replit!</h1>
 
-        <p className={styles.description}>
+        <p className={`${styles.description} text-gray-700`}>
           Get started by editing{" "}
-          <code className={styles.code}>pages/index.tsx</code>
+          <code className={`${styles.code} bg-gray-100 text-purple-600 border border-gray-200`}>pages/index.tsx</code>
         </p>
 
         <div className={styles.grid}>
