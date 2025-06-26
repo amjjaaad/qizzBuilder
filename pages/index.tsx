@@ -66,6 +66,7 @@ export default function QuizBuilder() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
     null,
   );
+  const [showQuestionTypes, setShowQuestionTypes] = useState(false);
 
   const questionFormRef = useRef<HTMLDivElement>(null);
   const questionListRef = useRef<HTMLDivElement>(null);
@@ -96,18 +97,35 @@ export default function QuizBuilder() {
     }
   }, []);
 
+  // Close question types when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showQuestionTypes && !(event.target as Element).closest('.floating-add-container')) {
+        setShowQuestionTypes(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showQuestionTypes]);
+
   const updateQuiz = useCallback((updates: Partial<Quiz>) => {
     setQuiz((prev) => ({ ...prev, ...updates, updatedAt: new Date() }));
     setSaveStatus("unsaved");
   }, []);
 
-  const addQuestion = () => {
+  const addQuestion = (questionType: Question["type"] = "multiple-choice") => {
     const newQuestion: Question = {
       id: "q-" + Date.now(),
-      type: "multiple-choice",
+      type: questionType,
       question: "",
-      options: ["", "", "", ""],
-      correctAnswer: 0,
+      options: questionType === "multiple-choice" ? ["", "", "", ""] : undefined,
+      correctAnswer: 
+        questionType === "true-false" 
+          ? "true" 
+          : questionType === "multiple-choice" 
+            ? 0 
+            : "",
       characterLimit: CHARACTER_LIMITS.question,
     };
 
@@ -117,6 +135,7 @@ export default function QuizBuilder() {
 
     setCurrentQuestionIndex(quiz.questions.length);
     setShowQuestionForm(true);
+    setShowQuestionTypes(false);
   };
 
   const updateQuestion = (index: number, updates: Partial<Question>) => {
@@ -690,13 +709,64 @@ export default function QuizBuilder() {
         </div>
       )}
 
-      {/* Floating Add Button */}
-      <button
-        onClick={addQuestion}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 active:scale-95 transition-all z-50 flex items-center justify-center"
-      >
-        <Plus size={24} />
-      </button>
+      {/* Floating Add Button with Question Type Options */}
+      <div className="floating-add-container fixed bottom-6 right-6 z-50">
+        {/* Question Type Options */}
+        {showQuestionTypes && (
+          <div className="absolute bottom-20 right-0 flex flex-col space-y-3 animate-in slide-in-from-bottom-4 duration-200">
+            {/* Multiple Choice Button */}
+            <button
+              onClick={() => addQuestion("multiple-choice")}
+              className="flex items-center bg-white text-gray-800 px-4 py-3 rounded-xl shadow-lg hover:shadow-xl border border-gray-200 hover:border-blue-300 transition-all group"
+            >
+              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200">
+                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+              </div>
+              <span className="font-medium whitespace-nowrap">Multiple Choice</span>
+            </button>
+
+            {/* True/False Button */}
+            <button
+              onClick={() => addQuestion("true-false")}
+              className="flex items-center bg-white text-gray-800 px-4 py-3 rounded-xl shadow-lg hover:shadow-xl border border-gray-200 hover:border-green-300 transition-all group"
+            >
+              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-green-200">
+                <Check size={16} className="text-green-600" />
+              </div>
+              <span className="font-medium whitespace-nowrap">True/False</span>
+            </button>
+
+            {/* Image-Based Button */}
+            <button
+              onClick={() => addQuestion("image-based")}
+              className="flex items-center bg-white text-gray-800 px-4 py-3 rounded-xl shadow-lg hover:shadow-xl border border-gray-200 hover:border-purple-300 transition-all group"
+            >
+              <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200">
+                <Image size={16} className="text-purple-600" />
+              </div>
+              <span className="font-medium whitespace-nowrap">Image-Based</span>
+            </button>
+          </div>
+        )}
+
+        {/* Main Add Button */}
+        <button
+          onClick={() => setShowQuestionTypes(!showQuestionTypes)}
+          className={`w-14 h-14 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 active:scale-95 transition-all flex items-center justify-center ${
+            showQuestionTypes ? 'rotate-45' : ''
+          }`}
+        >
+          <Plus size={24} />
+        </button>
+
+        {/* Add Question Label */}
+        {!showQuestionTypes && (
+          <div className="absolute bottom-16 right-0 bg-gray-800 text-white text-sm px-3 py-2 rounded-lg shadow-lg opacity-0 hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+            Add Question
+            <div className="absolute top-full right-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800"></div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
