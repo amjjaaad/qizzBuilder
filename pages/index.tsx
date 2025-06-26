@@ -1,8 +1,7 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Roboto } from 'next/font/google';
+import { Roboto } from "next/font/google";
 import {
   MdAdd as Plus,
   MdClose as X,
@@ -18,9 +17,9 @@ import {
 } from "react-icons/md";
 
 const roboto = Roboto({
-  weight: ['300', '400', '500', '700'],
-  subsets: ['latin'],
-  display: 'swap',
+  weight: ["300", "400", "500", "700"],
+  subsets: ["latin"],
+  display: "swap",
 });
 
 interface Question {
@@ -61,8 +60,12 @@ export default function QuizBuilder() {
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
     "saved",
   );
-  const [swipeState, setSwipeState] = useState<{ [key: string]: { x: number; action: 'edit' | 'delete' | null } }>({});
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [swipeState, setSwipeState] = useState<{
+    [key: string]: { x: number; action: "edit" | "delete" | null };
+  }>({});
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
+    null,
+  );
 
   const questionFormRef = useRef<HTMLDivElement>(null);
   const questionListRef = useRef<HTMLDivElement>(null);
@@ -131,9 +134,9 @@ export default function QuizBuilder() {
 
   const handleTouchStart = (e: React.TouchEvent, questionId: string) => {
     const touch = e.touches[0];
-    setSwipeState(prev => ({
+    setSwipeState((prev) => ({
       ...prev,
-      [questionId]: { x: 0, action: null }
+      [questionId]: { x: 0, action: null },
     }));
   };
 
@@ -141,17 +144,17 @@ export default function QuizBuilder() {
     const touch = e.touches[0];
     const startX = e.currentTarget.getBoundingClientRect().left;
     const deltaX = touch.clientX - startX - 200; // Adjust for card positioning
-    
-    let action: 'edit' | 'delete' | null = null;
+
+    let action: "edit" | "delete" | null = null;
     if (deltaX > 60) {
-      action = 'edit';
+      action = "edit";
     } else if (deltaX < -60) {
-      action = 'delete';
+      action = "delete";
     }
 
-    setSwipeState(prev => ({
+    setSwipeState((prev) => ({
       ...prev,
-      [questionId]: { x: Math.max(-120, Math.min(120, deltaX)), action }
+      [questionId]: { x: Math.max(-120, Math.min(120, deltaX)), action },
     }));
   };
 
@@ -159,17 +162,17 @@ export default function QuizBuilder() {
     const state = swipeState[questionId];
     if (!state) return;
 
-    if (state.action === 'edit') {
+    if (state.action === "edit") {
       setCurrentQuestionIndex(questionIndex);
       setShowQuestionForm(true);
-    } else if (state.action === 'delete') {
+    } else if (state.action === "delete") {
       setShowDeleteConfirm(questionId);
     }
 
     // Reset swipe state
-    setSwipeState(prev => ({
+    setSwipeState((prev) => ({
       ...prev,
-      [questionId]: { x: 0, action: null }
+      [questionId]: { x: 0, action: null },
     }));
   };
 
@@ -364,25 +367,35 @@ export default function QuizBuilder() {
     );
   };
 
-  const StudentQuestionCard = ({ question, index }: { question: Question; index: number }) => {
+  const StudentQuestionCard = ({
+    question,
+    index,
+  }: {
+    question: Question;
+    index: number;
+  }) => {
     const swipe = swipeState[question.id] || { x: 0, action: null };
-    
+
     return (
       <div className="relative overflow-hidden">
         {/* Background actions */}
         <div className="absolute inset-0 flex">
           {/* Edit action (right swipe) */}
-          <div className={`flex items-center justify-center bg-blue-500 text-white transition-all duration-200 ${
-            swipe.x > 0 ? 'w-24' : 'w-0'
-          }`}>
+          <div
+            className={`flex items-center justify-center bg-blue-500 text-white transition-all duration-200 ${
+              swipe.x > 0 ? "w-24" : "w-0"
+            }`}
+          >
             <Edit size={20} />
           </div>
-          
+
           {/* Delete action (left swipe) */}
           <div className="flex-1"></div>
-          <div className={`flex items-center justify-center bg-red-500 text-white transition-all duration-200 ${
-            swipe.x < 0 ? 'w-24' : 'w-0'
-          }`}>
+          <div
+            className={`flex items-center justify-center bg-red-500 text-white transition-all duration-200 ${
+              swipe.x < 0 ? "w-24" : "w-0"
+            }`}
+          >
             <Trash2 size={20} />
           </div>
         </div>
@@ -390,9 +403,11 @@ export default function QuizBuilder() {
         {/* Question card */}
         <div
           className={`bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-200 relative ${
-            swipe.action === 'edit' ? 'border-blue-300 shadow-blue-100' : 
-            swipe.action === 'delete' ? 'border-red-300 shadow-red-100' : 
-            'hover:shadow-md'
+            swipe.action === "edit"
+              ? "border-blue-300 shadow-blue-100"
+              : swipe.action === "delete"
+                ? "border-red-300 shadow-red-100"
+                : "hover:shadow-md"
           }`}
           style={{
             transform: `translateX(${swipe.x}px)`,
@@ -405,7 +420,9 @@ export default function QuizBuilder() {
             {/* Question header */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <span className="text-lg font-semibold text-gray-900">Question {index + 1}</span>
+                <span className="text-lg font-semibold text-gray-900">
+                  Question {index + 1}
+                </span>
                 <span
                   className={`text-xs px-3 py-1 rounded-full font-medium ${
                     question.type === "multiple-choice"
@@ -448,21 +465,24 @@ export default function QuizBuilder() {
             {/* Answer options */}
             {question.type === "multiple-choice" && question.options && (
               <div className="space-y-3">
-                {question.options.map((option, optIndex) => (
-                  option.trim() && (
-                    <div
-                      key={optIndex}
-                      className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all"
-                    >
-                      <div className="flex items-center">
-                        <div className="w-5 h-5 rounded-full border-2 border-gray-400 mr-4 flex-shrink-0">
-                          <div className="w-full h-full rounded-full"></div>
+                {question.options.map(
+                  (option, optIndex) =>
+                    option.trim() && (
+                      <div
+                        key={optIndex}
+                        className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all"
+                      >
+                        <div className="flex items-center">
+                          <div className="w-5 h-5 rounded-full border-2 border-gray-400 mr-4 flex-shrink-0">
+                            <div className="w-full h-full rounded-full"></div>
+                          </div>
+                          <span className="text-gray-800 text-lg">
+                            {option}
+                          </span>
                         </div>
-                        <span className="text-gray-800 text-lg">{option}</span>
                       </div>
-                    </div>
-                  )
-                ))}
+                    ),
+                )}
               </div>
             )}
 
@@ -550,7 +570,10 @@ export default function QuizBuilder() {
       {/* Question List */}
       {!showQuestionForm && (
         <div className="p-4 bg-gray-50 min-h-screen">
-          <div ref={questionListRef} className="space-y-4 pb-20 max-w-2xl mx-auto">
+          <div
+            ref={questionListRef}
+            className="space-y-4 pb-20 max-w-2xl mx-auto"
+          >
             {quiz.questions.length === 0 ? (
               <div className="text-center py-12">
                 <FileText size={48} className="mx-auto text-gray-400 mb-4" />
@@ -569,7 +592,10 @@ export default function QuizBuilder() {
                   </p>
                 </div>
                 {quiz.questions.map((question, index) => (
-                  <div key={question.id} className="animate-in slide-in-from-bottom-4 duration-300">
+                  <div
+                    key={question.id}
+                    className="animate-in slide-in-from-bottom-4 duration-300"
+                  >
                     <StudentQuestionCard question={question} index={index} />
                   </div>
                 ))}
@@ -643,7 +669,8 @@ export default function QuizBuilder() {
               Delete Question
             </h3>
             <p className="text-gray-600 mb-4">
-              Are you sure you want to delete this question? This action cannot be undone.
+              Are you sure you want to delete this question? This action cannot
+              be undone.
             </p>
             <div className="flex space-x-3">
               <button
