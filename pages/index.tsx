@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Roboto } from 'next/font/google';
 import {
   MdAdd as Plus,
   MdClose as X,
@@ -13,6 +14,12 @@ import {
   MdDescription as FileText,
   MdDelete as Trash2,
 } from "react-icons/md";
+
+const roboto = Roboto({
+  weight: ['300', '400', '500', '700'],
+  subsets: ['latin'],
+  display: 'swap',
+});
 
 interface Question {
   id: string;
@@ -338,7 +345,7 @@ export default function QuizBuilder() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className={`min-h-screen bg-gray-50 ${roboto.className}`}>
       {/* Header */}
       <div className="bg-white shadow-sm border-b sticky top-0 z-40">
         <div className="px-4 py-3">
