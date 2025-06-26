@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Roboto } from "next/font/google";
-import { useSwipeable } from "react-swipeable";
+import { motion, PanInfo, useMotionValue, useTransform } from "framer-motion";
 import {
   MdAdd as Plus,
   MdClose as X,
@@ -156,36 +156,6 @@ export default function QuizBuilder() {
     const [movedQuestion] = updatedQuestions.splice(fromIndex, 1);
     updatedQuestions.splice(toIndex, 0, movedQuestion);
     updateQuiz({ questions: updatedQuestions });
-  };
-
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedIndex(index);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/html", e.currentTarget.outerHTML);
-  };
-
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOverIndex(index);
-  };
-
-  const handleDragLeave = () => {
-    setDragOverIndex(null);
-  };
-
-  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
-    e.preventDefault();
-    if (draggedIndex !== null && draggedIndex !== dropIndex) {
-      reorderQuestions(draggedIndex, dropIndex);
-    }
-    setDraggedIndex(null);
-    setDragOverIndex(null);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedIndex(null);
-    setDragOverIndex(null);
   };
 
   const QuestionForm = ({
@@ -386,53 +356,154 @@ export default function QuizBuilder() {
     question: Question;
     index: number;
   }) => {
-    const handlers = useSwipeable({
-      onSwipedLeft: () => setShowDeleteConfirm(question.id),
-      onSwipedRight: () => {
-        setCurrentQuestionIndex(index);
-        setShowQuestionForm(true);
-      },
-      swipeDuration: 300,
-      preventScrollOnSwipe: true,
-      trackMouse: true
-    });
+    const x = useMotionValue(0);
+    const y = useMotionValue(0);
+    const rotateX = useTransform(y, [-100, 100], [5, -5]);
+    const rotateY = useTransform(x, [-100, 100], [-5, 5]);
+    
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragDirection, setDragDirection] = useState<'horizontal' | 'vertical' | null>(null);
 
-    const isDragging = draggedIndex === index;
-    const isDragOver = dragOverIndex === index;
+    const handleDragStart = () => {
+      setIsDragging(true);
+      setDraggedIndex(index);
+    };
+
+    const handleDrag = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      const deltaX = Math.abs(info.delta.x);
+      const deltaY = Math.abs(info.delta.y);
+      
+      // Determine drag direction based on initial movement
+      if (!dragDirection && (deltaX > 5 || deltaY > 5)) {
+        if (deltaX > deltaY) {
+          setDragDirection('horizontal');
+        } else {
+          setDragDirection('vertical');
+        }
+      }
+
+      // Handle vertical dragging for reordering
+      if (dragDirection === 'vertical') {
+        const currentY = y.get();
+        const cardHeight = 120; // Approximate card height
+        const newIndex = Math.round(index + currentY / cardHeight);
+        const clampedIndex = Math.max(0, Math.min(quiz.questions.length - 1, newIndex));
+        
+        if (clampedIndex !== dragOverIndex) {
+          setDragOverIndex(clampedIndex);
+        }
+      }
+    };
+
+    const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      setIsDragging(false);
+      setDraggedIndex(null);
+      
+      const deltaX = info.offset.x;
+      const deltaY = info.offset.y;
+      const velocityX = info.velocity.x;
+      const velocityY = info.velocity.y;
+
+      if (dragDirection === 'horizontal') {
+        // Handle horizontal swipe actions
+        const threshold = 80;
+        const velocityThreshold = 300;
+        
+        if (deltaX > threshold || velocityX > velocityThreshold) {
+          // Swipe right - Edit
+          setCurrentQuestionIndex(index);
+          setShowQuestionForm(true);
+        } else if (deltaX < -threshold || velocityX < -velocityThreshold) {
+          // Swipe left - Delete
+          setShowDeleteConfirm(question.id);
+        }
+      } else if (dragDirection === 'vertical' && dragOverIndex !== null && dragOverIndex !== index) {
+        // Handle vertical drag for reordering
+        reorderQuestions(index, dragOverIndex);
+      }
+
+      // Reset values
+      x.set(0);
+      y.set(0);
+      setDragDirection(null);
+      setDragOverIndex(null);
+    };
+
+    const cardVariants = {
+      idle: {
+        scale: 1,
+        rotateX: 0,
+        rotateY: 0,
+        boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+      },
+      dragging: {
+        scale: 1.05,
+        boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+        zIndex: 50,
+      },
+    };
 
     return (
-      <div
-        {...handlers}
-        draggable
-        onDragStart={(e) => handleDragStart(e, index)}
-        onDragOver={(e) => handleDragOver(e, index)}
-        onDragLeave={handleDragLeave}
-        onDrop={(e) => handleDrop(e, index)}
-        onDragEnd={handleDragEnd}
-        className={`relative transition-all duration-200 ${
-          isDragging ? 'opacity-50 scale-95' : ''
-        } ${
-          isDragOver ? 'transform translate-y-2' : ''
-        }`}
+      <motion.div
+        className="relative"
+        initial={false}
+        animate={isDragging ? "dragging" : "idle"}
+        variants={cardVariants}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
       >
-        {/* Drop indicator */}
-        {isDragOver && (
-          <div className="absolute -top-2 left-0 right-0 h-1 bg-blue-500 rounded-full z-10"></div>
+        {/* Drop indicator for vertical reordering */}
+        {dragOverIndex === index && draggedIndex !== index && (
+          <motion.div
+            className="absolute -top-2 left-0 right-0 h-1 bg-blue-500 rounded-full z-10"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+          />
         )}
 
-        {/* Question card */}
-        <div
-          className={`bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 relative cursor-move ${
-            isDragOver ? 'border-blue-300 shadow-blue-100' : ''
-          }`}
+        <motion.div
+          className="bg-white rounded-xl border border-gray-200 cursor-grab active:cursor-grabbing overflow-hidden"
+          style={{ x, y, rotateX, rotateY }}
+          drag
+          dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+          dragElastic={0.2}
+          onDragStart={handleDragStart}
+          onDrag={handleDrag}
+          onDragEnd={handleDragEnd}
+          whileDrag={{ cursor: "grabbing" }}
         >
-          <div className="p-6">
+          {/* Swipe action indicators */}
+          <motion.div
+            className="absolute inset-y-0 left-0 w-20 bg-blue-500 flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ 
+              opacity: dragDirection === 'horizontal' && x.get() > 40 ? 1 : 0 
+            }}
+          >
+            <Edit size={24} className="text-white" />
+          </motion.div>
+          
+          <motion.div
+            className="absolute inset-y-0 right-0 w-20 bg-red-500 flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ 
+              opacity: dragDirection === 'horizontal' && x.get() < -40 ? 1 : 0 
+            }}
+          >
+            <Trash2 size={24} className="text-white" />
+          </motion.div>
+
+          <div className="p-6 relative bg-white">
             {/* Question header with drag handle */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <div className="cursor-grab active:cursor-grabbing">
+                <motion.div 
+                  className="cursor-grab active:cursor-grabbing"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.95 }}
+                >
                   <GripVertical size={20} className="text-gray-400" />
-                </div>
+                </motion.div>
                 <span className="text-lg font-semibold text-gray-900">
                   Question {index + 1}
                 </span>
@@ -481,9 +552,11 @@ export default function QuizBuilder() {
                 {question.options.map(
                   (option, optIndex) =>
                     option.trim() && (
-                      <div
+                      <motion.div
                         key={optIndex}
                         className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
                       >
                         <div className="flex items-center">
                           <div className="w-5 h-5 rounded-full border-2 border-gray-400 mr-4 flex-shrink-0">
@@ -493,7 +566,7 @@ export default function QuizBuilder() {
                             {option}
                           </span>
                         </div>
-                      </div>
+                      </motion.div>
                     ),
                 )}
               </div>
@@ -502,9 +575,11 @@ export default function QuizBuilder() {
             {question.type === "true-false" && (
               <div className="space-y-3">
                 {["True", "False"].map((option) => (
-                  <div
+                  <motion.div
                     key={option}
                     className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                   >
                     <div className="flex items-center">
                       <div className="w-5 h-5 rounded-full border-2 border-gray-400 mr-4 flex-shrink-0">
@@ -512,7 +587,7 @@ export default function QuizBuilder() {
                       </div>
                       <span className="text-gray-800 text-lg">{option}</span>
                     </div>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
             )}
@@ -531,8 +606,8 @@ export default function QuizBuilder() {
               </div>
             )}
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     );
   };
 
@@ -555,8 +630,7 @@ export default function QuizBuilder() {
                 className="text-lg font-semibold bg-transparent border-none outline-none w-full"
               />
               <div className="text-xs text-gray-500">
-                {quiz.title.length}/{CHARACTER_LIMITS.title} •{" "}
-                {quiz.questions.length} questions
+                {quiz.title.length}/{CHARACTER_LIMITS.title} • {quiz.questions.length} questions
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -601,16 +675,20 @@ export default function QuizBuilder() {
               <>
                 <div className="text-center mb-6">
                   <p className="text-sm text-gray-500">
-                    Swipe right to edit • Swipe left to delete • Drag to reorder
+                    Drag vertically to reorder • Swipe right to edit • Swipe left to delete
                   </p>
                 </div>
                 {quiz.questions.map((question, index) => (
-                  <div
+                  <motion.div
                     key={question.id}
-                    className="animate-in slide-in-from-bottom-4 duration-300"
+                    layout
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.3 }}
                   >
                     <StudentQuestionCard question={question} index={index} />
-                  </div>
+                  </motion.div>
                 ))}
               </>
             )}
@@ -676,8 +754,18 @@ export default function QuizBuilder() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full">
+        <motion.div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <motion.div
+            className="bg-white rounded-lg p-6 max-w-sm w-full"
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+          >
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
               Delete Question
             </h3>
@@ -699,66 +787,82 @@ export default function QuizBuilder() {
                 Delete
               </button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
 
       {/* Floating Add Button with Question Type Options */}
       <div className="floating-add-container fixed bottom-6 right-6 z-50">
         {/* Question Type Options */}
         {showQuestionTypes && (
-          <div className="absolute bottom-20 right-0 flex flex-col space-y-3 animate-in slide-in-from-bottom-4 duration-200">
+          <motion.div
+            className="absolute bottom-20 right-0 flex flex-col space-y-3"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+          >
             {/* Multiple Choice Button */}
-            <button
+            <motion.button
               onClick={() => addQuestion("multiple-choice")}
               className="flex items-center bg-white text-gray-800 px-4 py-3 rounded-xl shadow-lg hover:shadow-xl border border-gray-200 hover:border-blue-300 transition-all group"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
             >
               <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200">
                 <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
               </div>
               <span className="font-medium whitespace-nowrap">Multiple Choice</span>
-            </button>
+            </motion.button>
 
             {/* True/False Button */}
-            <button
+            <motion.button
               onClick={() => addQuestion("true-false")}
               className="flex items-center bg-white text-gray-800 px-4 py-3 rounded-xl shadow-lg hover:shadow-xl border border-gray-200 hover:border-green-300 transition-all group"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
             >
               <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-green-200">
                 <Check size={16} className="text-green-600" />
               </div>
               <span className="font-medium whitespace-nowrap">True/False</span>
-            </button>
+            </motion.button>
 
             {/* Image-Based Button */}
-            <button
+            <motion.button
               onClick={() => addQuestion("image-based")}
               className="flex items-center bg-white text-gray-800 px-4 py-3 rounded-xl shadow-lg hover:shadow-xl border border-gray-200 hover:border-purple-300 transition-all group"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
             >
               <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200">
                 <Image size={16} className="text-purple-600" />
               </div>
               <span className="font-medium whitespace-nowrap">Image-Based</span>
-            </button>
-          </div>
+            </motion.button>
+          </motion.div>
         )}
 
         {/* Main Add Button */}
-        <button
+        <motion.button
           onClick={() => setShowQuestionTypes(!showQuestionTypes)}
-          className={`w-14 h-14 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 active:scale-95 transition-all flex items-center justify-center ${
-            showQuestionTypes ? 'rotate-45' : ''
-          }`}
+          className="w-14 h-14 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 flex items-center justify-center"
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          animate={{ rotate: showQuestionTypes ? 45 : 0 }}
         >
           <Plus size={24} />
-        </button>
+        </motion.button>
 
         {/* Add Question Label */}
         {!showQuestionTypes && (
-          <div className="absolute bottom-16 right-0 bg-gray-800 text-white text-sm px-3 py-2 rounded-lg shadow-lg opacity-0 hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+          <motion.div
+            className="absolute bottom-16 right-0 bg-gray-800 text-white text-sm px-3 py-2 rounded-lg shadow-lg opacity-0 hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap"
+            initial={{ opacity: 0 }}
+            whileHover={{ opacity: 1 }}
+          >
             Add Question
             <div className="absolute top-full right-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800"></div>
-          </div>
+          </motion.div>
         )}
       </div>
     </div>
