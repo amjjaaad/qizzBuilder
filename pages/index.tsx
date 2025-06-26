@@ -2,17 +2,17 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Plus,
-  X,
-  GripVertical,
-  Image,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Save,
-  FileText,
-  Trash2,
-} from "lucide-react";
+  MdAdd as Plus,
+  MdClose as X,
+  MdDragIndicator as GripVertical,
+  MdImage as Image,
+  MdCheck as Check,
+  MdChevronLeft as ChevronLeft,
+  MdChevronRight as ChevronRight,
+  MdSave as Save,
+  MdDescription as FileText,
+  MdDelete as Trash2,
+} from "react-icons/md";
 
 interface Question {
   id: string;
