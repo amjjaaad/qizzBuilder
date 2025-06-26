@@ -63,6 +63,7 @@ export default function QuizBuilder() {
     "saved",
   );
   const [previewMode, setPreviewMode] = useState<{ [key: string]: boolean }>({});
+  const [dragMode, setDragMode] = useState<{ [key: string]: boolean }>({});
 
   const questionFormRef = useRef<HTMLDivElement>(null);
   const questionListRef = useRef<HTMLDivElement>(null);
@@ -144,6 +145,9 @@ export default function QuizBuilder() {
 
   const SwipeableQuestionCard = ({ question, index }: { question: Question; index: number }) => {
     const x = useMotionValue(0);
+    const [pressTimer, setPressTimer] = useState<NodeJS.Timeout | null>(null);
+    const [isPressed, setIsPressed] = useState(false);
+    
     const background = useTransform(
       x,
       [-100, -50, 0, 50, 100],
@@ -152,7 +156,33 @@ export default function QuizBuilder() {
     const editOpacity = useTransform(x, [0, 50, 100], [0, 0.5, 1]);
     const deleteOpacity = useTransform(x, [-100, -50, 0], [1, 0.5, 0]);
 
+    const isDragModeActive = dragMode[question.id];
+
+    const handlePressStart = () => {
+      setIsPressed(true);
+      const timer = setTimeout(() => {
+        setDragMode(prev => ({ ...prev, [question.id]: true }));
+        setIsPressed(false);
+      }, 500); // 500ms press-and-hold
+      setPressTimer(timer);
+    };
+
+    const handlePressEnd = () => {
+      setIsPressed(false);
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        setPressTimer(null);
+      }
+    };
+
     const handleDragEnd = (event: any, info: any) => {
+      if (isDragModeActive) {
+        // In drag mode, only handle reordering (handled by Reorder.Item)
+        setDragMode(prev => ({ ...prev, [question.id]: false }));
+        return;
+      }
+
+      // In swipe mode, handle swipe gestures
       const offset = info.offset.x;
       const velocity = info.velocity.x;
       
@@ -172,38 +202,72 @@ export default function QuizBuilder() {
 
     return (
       <div className="relative overflow-hidden rounded-xl">
-        {/* Background indicators */}
-        <motion.div 
-          style={{ backgroundColor: background }}
-          className="absolute inset-0 flex items-center justify-between px-6"
-        >
+        {/* Background indicators - only show when not in drag mode */}
+        {!isDragModeActive && (
           <motion.div 
-            style={{ opacity: deleteOpacity }}
-            className="flex items-center text-white font-semibold"
+            style={{ backgroundColor: background }}
+            className="absolute inset-0 flex items-center justify-between px-6"
           >
-            <Trash2 size={20} className="mr-2" />
-            Delete
+            <motion.div 
+              style={{ opacity: deleteOpacity }}
+              className="flex items-center text-white font-semibold"
+            >
+              <Trash2 size={20} className="mr-2" />
+              Delete
+            </motion.div>
+            <motion.div 
+              style={{ opacity: editOpacity }}
+              className="flex items-center text-white font-semibold"
+            >
+              Edit
+              <Edit size={20} className="ml-2" />
+            </motion.div>
           </motion.div>
-          <motion.div 
-            style={{ opacity: editOpacity }}
-            className="flex items-center text-white font-semibold"
-          >
-            Edit
-            <Edit size={20} className="ml-2" />
-          </motion.div>
-        </motion.div>
+        )}
 
         {/* Main card content */}
         <motion.div
-          drag="x"
-          dragConstraints={{ left: -120, right: 120 }}
-          dragElastic={0.1}
-          style={{ x }}
+          drag={isDragModeActive ? "y" : "x"}
+          dragConstraints={isDragModeActive ? { top: 0, bottom: 0 } : { left: -120, right: 120 }}
+          dragElastic={isDragModeActive ? 0 : 0.1}
+          style={{ x: isDragModeActive ? 0 : x }}
           onDragEnd={handleDragEnd}
-          className="relative z-10 bg-gray-50 rounded-xl p-5 border-2 border-transparent hover:border-blue-200 transition-all duration-200 transform hover:scale-[1.02] hover:shadow-md group-hover:bg-white cursor-grab active:cursor-grabbing"
+          onPointerDown={handlePressStart}
+          onPointerUp={handlePressEnd}
+          onPointerLeave={handlePressEnd}
+          className={`relative z-10 rounded-xl p-5 border-2 transition-all duration-200 ${
+            isDragModeActive 
+              ? "bg-blue-50 border-blue-300 shadow-lg scale-105" 
+              : isPressed
+                ? "bg-gray-100 border-gray-300 scale-95"
+                : "bg-gray-50 border-transparent hover:border-blue-200 transform hover:scale-[1.02] hover:shadow-md"
+          } ${
+            isDragModeActive ? "cursor-grabbing" : "cursor-grab active:cursor-grabbing"
+          }`}
+          whileDrag={isDragModeActive ? { 
+            scale: 1.05,
+            zIndex: 999,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.2)"
+          } : {}}
         >
+          {/* Drag mode indicator */}
+          {isDragModeActive && (
+            <div className="absolute top-2 right-2 bg-blue-500 text-white px-2 py-1 rounded-full text-xs font-semibold">
+              Drag Mode
+            </div>
+          )}
+
+          {/* Press and hold indicator */}
+          {isPressed && !isDragModeActive && (
+            <div className="absolute top-2 right-2 bg-gray-500 text-white px-2 py-1 rounded-full text-xs font-semibold">
+              Hold to Drag
+            </div>
+          )}
+
           <div className="flex items-start space-x-4">
-            <div className="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 transition-colors">
+            <div className={`flex-shrink-0 p-2 transition-colors ${
+              isDragModeActive ? "text-blue-600" : "text-gray-400 hover:text-gray-600"
+            }`}>
               <GripVertical size={16} />
             </div>
             
@@ -227,44 +291,46 @@ export default function QuizBuilder() {
                         : "Image-Based"}
                   </span>
                 </div>
-                <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button 
-                    className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      togglePreview(question.id);
-                    }}
-                    title="Preview"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  </button>
-                  <button 
-                    className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCurrentQuestionIndex(index);
-                      setShowQuestionForm(true);
-                    }}
-                    title="Edit"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </button>
-                  <button 
-                    className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded-full hover:bg-red-50"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteQuestion(index);
-                    }}
-                    title="Delete"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
+                {!isDragModeActive && (
+                  <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        togglePreview(question.id);
+                      }}
+                      title="Preview"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
+                    <button 
+                      className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCurrentQuestionIndex(index);
+                        setShowQuestionForm(true);
+                      }}
+                      title="Edit"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button 
+                      className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded-full hover:bg-red-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteQuestion(index);
+                      }}
+                      title="Delete"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                )}
               </div>
               
               <div className="mb-3">
@@ -666,11 +732,7 @@ export default function QuizBuilder() {
                     key={question.id} 
                     value={question}
                     className="group"
-                    whileDrag={{ 
-                      scale: 1.05,
-                      zIndex: 999,
-                      boxShadow: "0 10px 30px rgba(0,0,0,0.2)"
-                    }}
+                    drag={dragMode[question.id]}
                   >
                     {previewMode[question.id] ? (
                       <div className="animate-in slide-in-from-bottom-4 duration-300">
