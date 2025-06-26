@@ -1,7 +1,9 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Roboto } from "next/font/google";
+import { useSwipeable } from "react-swipeable";
 import {
   MdAdd as Plus,
   MdClose as X,
@@ -60,14 +62,12 @@ export default function QuizBuilder() {
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
     "saved",
   );
-  const [swipeState, setSwipeState] = useState<{
-    [key: string]: { x: number; action: "edit" | "delete" | null };
-  }>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
     null,
   );
   const [showQuestionTypes, setShowQuestionTypes] = useState(false);
-  const [touchStartX, setTouchStartX] = useState<{ [key: string]: number }>({});
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const questionFormRef = useRef<HTMLDivElement>(null);
   const questionListRef = useRef<HTMLDivElement>(null);
@@ -149,63 +149,43 @@ export default function QuizBuilder() {
     const updatedQuestions = quiz.questions.filter((q) => q.id !== questionId);
     updateQuiz({ questions: updatedQuestions });
     setShowDeleteConfirm(null);
-    setSwipeState({});
   };
 
-  const [touchStartX, setTouchStartX] = useState<{ [key: string]: number }>({});
-
-  const handleTouchStart = (e: React.TouchEvent, questionId: string) => {
-    const touch = e.touches[0];
-    setTouchStartX((prev) => ({
-      ...prev,
-      [questionId]: touch.clientX,
-    }));
-    setSwipeState((prev) => ({
-      ...prev,
-      [questionId]: { x: 0, action: null },
-    }));
+  const reorderQuestions = (fromIndex: number, toIndex: number) => {
+    const updatedQuestions = [...quiz.questions];
+    const [movedQuestion] = updatedQuestions.splice(fromIndex, 1);
+    updatedQuestions.splice(toIndex, 0, movedQuestion);
+    updateQuiz({ questions: updatedQuestions });
   };
 
-  const handleTouchMove = (e: React.TouchEvent, questionId: string) => {
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/html", e.currentTarget.outerHTML);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
-    const touch = e.touches[0];
-    const startX = touchStartX[questionId];
-    if (startX === undefined) return;
-
-    const deltaX = touch.clientX - startX;
-    const clampedDeltaX = Math.max(-120, Math.min(120, deltaX));
-
-    let action: "edit" | "delete" | null = null;
-    if (deltaX > 60) {
-      action = "edit";
-    } else if (deltaX < -60) {
-      action = "delete";
-    }
-
-    setSwipeState((prev) => ({
-      ...prev,
-      [questionId]: { x: clampedDeltaX, action },
-    }));
+    e.dataTransfer.dropEffect = "move";
+    setDragOverIndex(index);
   };
 
-  const handleTouchEnd = (questionId: string, questionIndex: number) => {
-    const state = swipeState[questionId];
-    if (!state) return;
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
 
-    if (state.action === "edit") {
-      setCurrentQuestionIndex(questionIndex);
-      setShowQuestionForm(true);
-    } else if (state.action === "delete") {
-      setShowDeleteConfirm(questionId);
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex !== null && draggedIndex !== dropIndex) {
+      reorderQuestions(draggedIndex, dropIndex);
     }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
 
-    // Reset swipe state after a short delay to allow visual feedback
-    setTimeout(() => {
-      setSwipeState((prev) => ({
-        ...prev,
-        [questionId]: { x: 0, action: null },
-      }));
-    }, 200);
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
   };
 
   const QuestionForm = ({
@@ -406,53 +386,53 @@ export default function QuizBuilder() {
     question: Question;
     index: number;
   }) => {
-    const swipe = swipeState[question.id] || { x: 0, action: null };
+    const handlers = useSwipeable({
+      onSwipedLeft: () => setShowDeleteConfirm(question.id),
+      onSwipedRight: () => {
+        setCurrentQuestionIndex(index);
+        setShowQuestionForm(true);
+      },
+      swipeDuration: 300,
+      preventScrollOnSwipe: true,
+      trackMouse: true
+    });
+
+    const isDragging = draggedIndex === index;
+    const isDragOver = dragOverIndex === index;
 
     return (
-      <div className="relative overflow-hidden">
-        {/* Background actions */}
-        <div className="absolute inset-0 flex">
-          {/* Edit action (right swipe) */}
-          <div
-            className={`flex items-center justify-center bg-blue-500 text-white transition-all duration-200 ${
-              swipe.x > 0 ? "w-24" : "w-0"
-            }`}
-          >
-            <Edit size={20} />
-          </div>
-
-          {/* Delete action (left swipe) */}
-          <div className="flex-1"></div>
-          <div
-            className={`flex items-center justify-center bg-red-500 text-white transition-all duration-200 ${
-              swipe.x < 0 ? "w-24" : "w-0"
-            }`}
-          >
-            <Trash2 size={20} />
-          </div>
-        </div>
+      <div
+        {...handlers}
+        draggable
+        onDragStart={(e) => handleDragStart(e, index)}
+        onDragOver={(e) => handleDragOver(e, index)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, index)}
+        onDragEnd={handleDragEnd}
+        className={`relative transition-all duration-200 ${
+          isDragging ? 'opacity-50 scale-95' : ''
+        } ${
+          isDragOver ? 'transform translate-y-2' : ''
+        }`}
+      >
+        {/* Drop indicator */}
+        {isDragOver && (
+          <div className="absolute -top-2 left-0 right-0 h-1 bg-blue-500 rounded-full z-10"></div>
+        )}
 
         {/* Question card */}
         <div
-          className={`bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-200 relative touch-pan-y ${
-            swipe.action === "edit"
-              ? "border-blue-300 shadow-blue-100"
-              : swipe.action === "delete"
-                ? "border-red-300 shadow-red-100"
-                : "hover:shadow-md"
+          className={`bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 relative cursor-move ${
+            isDragOver ? 'border-blue-300 shadow-blue-100' : ''
           }`}
-          style={{
-            transform: `translateX(${swipe.x}px)`,
-            transition: swipe.x === 0 ? 'transform 0.2s ease-out' : 'none',
-          }}
-          onTouchStart={(e) => handleTouchStart(e, question.id)}
-          onTouchMove={(e) => handleTouchMove(e, question.id)}
-          onTouchEnd={() => handleTouchEnd(question.id, index)}
         >
           <div className="p-6">
-            {/* Question header */}
+            {/* Question header with drag handle */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
+                <div className="cursor-grab active:cursor-grabbing">
+                  <GripVertical size={20} className="text-gray-400" />
+                </div>
                 <span className="text-lg font-semibold text-gray-900">
                   Question {index + 1}
                 </span>
@@ -621,7 +601,7 @@ export default function QuizBuilder() {
               <>
                 <div className="text-center mb-6">
                   <p className="text-sm text-gray-500">
-                    Swipe right to edit • Swipe left to delete
+                    Swipe right to edit • Swipe left to delete • Drag to reorder
                   </p>
                 </div>
                 {quiz.questions.map((question, index) => (
