@@ -67,6 +67,7 @@ export default function QuizBuilder() {
     null,
   );
   const [showQuestionTypes, setShowQuestionTypes] = useState(false);
+  const [touchStartX, setTouchStartX] = useState<{ [key: string]: number }>({});
 
   const questionFormRef = useRef<HTMLDivElement>(null);
   const questionListRef = useRef<HTMLDivElement>(null);
@@ -151,8 +152,14 @@ export default function QuizBuilder() {
     setSwipeState({});
   };
 
+  const [touchStartX, setTouchStartX] = useState<{ [key: string]: number }>({});
+
   const handleTouchStart = (e: React.TouchEvent, questionId: string) => {
     const touch = e.touches[0];
+    setTouchStartX((prev) => ({
+      ...prev,
+      [questionId]: touch.clientX,
+    }));
     setSwipeState((prev) => ({
       ...prev,
       [questionId]: { x: 0, action: null },
@@ -160,9 +167,13 @@ export default function QuizBuilder() {
   };
 
   const handleTouchMove = (e: React.TouchEvent, questionId: string) => {
+    e.preventDefault();
     const touch = e.touches[0];
-    const startX = e.currentTarget.getBoundingClientRect().left;
-    const deltaX = touch.clientX - startX - 200; // Adjust for card positioning
+    const startX = touchStartX[questionId];
+    if (startX === undefined) return;
+
+    const deltaX = touch.clientX - startX;
+    const clampedDeltaX = Math.max(-120, Math.min(120, deltaX));
 
     let action: "edit" | "delete" | null = null;
     if (deltaX > 60) {
@@ -173,7 +184,7 @@ export default function QuizBuilder() {
 
     setSwipeState((prev) => ({
       ...prev,
-      [questionId]: { x: Math.max(-120, Math.min(120, deltaX)), action },
+      [questionId]: { x: clampedDeltaX, action },
     }));
   };
 
@@ -188,11 +199,13 @@ export default function QuizBuilder() {
       setShowDeleteConfirm(questionId);
     }
 
-    // Reset swipe state
-    setSwipeState((prev) => ({
-      ...prev,
-      [questionId]: { x: 0, action: null },
-    }));
+    // Reset swipe state after a short delay to allow visual feedback
+    setTimeout(() => {
+      setSwipeState((prev) => ({
+        ...prev,
+        [questionId]: { x: 0, action: null },
+      }));
+    }, 200);
   };
 
   const QuestionForm = ({
@@ -421,7 +434,7 @@ export default function QuizBuilder() {
 
         {/* Question card */}
         <div
-          className={`bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-200 relative ${
+          className={`bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-200 relative touch-pan-y ${
             swipe.action === "edit"
               ? "border-blue-300 shadow-blue-100"
               : swipe.action === "delete"
@@ -430,6 +443,7 @@ export default function QuizBuilder() {
           }`}
           style={{
             transform: `translateX(${swipe.x}px)`,
+            transition: swipe.x === 0 ? 'transform 0.2s ease-out' : 'none',
           }}
           onTouchStart={(e) => handleTouchStart(e, question.id)}
           onTouchMove={(e) => handleTouchMove(e, question.id)}
