@@ -358,8 +358,6 @@ export default function QuizBuilder() {
   }) => {
     const x = useMotionValue(0);
     const y = useMotionValue(0);
-    const rotateX = useTransform(y, [-100, 100], [5, -5]);
-    const rotateY = useTransform(x, [-100, 100], [-5, 5]);
     
     const [isDragging, setIsDragging] = useState(false);
     const [dragDirection, setDragDirection] = useState<'horizontal' | 'vertical' | null>(null);
@@ -374,10 +372,10 @@ export default function QuizBuilder() {
       const deltaY = Math.abs(info.delta.y);
       
       // Determine drag direction based on initial movement
-      if (!dragDirection && (deltaX > 5 || deltaY > 5)) {
-        if (deltaX > deltaY) {
+      if (!dragDirection && (deltaX > 10 || deltaY > 10)) {
+        if (deltaX > deltaY * 1.5) {
           setDragDirection('horizontal');
-        } else {
+        } else if (deltaY > deltaX * 1.5) {
           setDragDirection('vertical');
         }
       }
@@ -385,7 +383,7 @@ export default function QuizBuilder() {
       // Handle vertical dragging for reordering
       if (dragDirection === 'vertical') {
         const currentY = y.get();
-        const cardHeight = 120; // Approximate card height
+        const cardHeight = 140; // Approximate card height
         const newIndex = Math.round(index + currentY / cardHeight);
         const clampedIndex = Math.max(0, Math.min(quiz.questions.length - 1, newIndex));
         
@@ -396,9 +394,6 @@ export default function QuizBuilder() {
     };
 
     const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-      setIsDragging(false);
-      setDraggedIndex(null);
-      
       const deltaX = info.offset.x;
       const deltaY = info.offset.y;
       const velocityX = info.velocity.x;
@@ -427,17 +422,17 @@ export default function QuizBuilder() {
       y.set(0);
       setDragDirection(null);
       setDragOverIndex(null);
+      setIsDragging(false);
+      setDraggedIndex(null);
     };
 
     const cardVariants = {
       idle: {
         scale: 1,
-        rotateX: 0,
-        rotateY: 0,
         boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
       },
       dragging: {
-        scale: 1.05,
+        scale: 1.02,
         boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
         zIndex: 50,
       },
@@ -445,7 +440,7 @@ export default function QuizBuilder() {
 
     return (
       <motion.div
-        className="relative"
+        className="relative mb-4"
         initial={false}
         animate={isDragging ? "dragging" : "idle"}
         variants={cardVariants}
@@ -462,11 +457,15 @@ export default function QuizBuilder() {
         )}
 
         <motion.div
-          className="bg-white rounded-xl border border-gray-200 cursor-grab active:cursor-grabbing overflow-hidden"
-          style={{ x, y, rotateX, rotateY }}
-          drag
-          dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-          dragElastic={0.2}
+          className="bg-white rounded-xl border border-gray-200 cursor-grab active:cursor-grabbing overflow-hidden relative"
+          style={{ 
+            x: dragDirection === 'horizontal' ? x : 0, 
+            y: dragDirection === 'vertical' ? y : 0 
+          }}
+          drag={dragDirection || true}
+          dragConstraints={dragDirection === 'horizontal' ? { left: -150, right: 150, top: 0, bottom: 0 } : { left: 0, right: 0, top: -200, bottom: 200 }}
+          dragElastic={0.1}
+          dragMomentum={false}
           onDragStart={handleDragStart}
           onDrag={handleDrag}
           onDragEnd={handleDragEnd}
@@ -474,9 +473,8 @@ export default function QuizBuilder() {
         >
           {/* Swipe action indicators */}
           <motion.div
-            className="absolute inset-y-0 left-0 w-20 bg-blue-500 flex items-center justify-center"
-            initial={{ opacity: 0 }}
-            animate={{ 
+            className="absolute inset-y-0 left-0 w-20 bg-blue-500 flex items-center justify-center z-0"
+            style={{ 
               opacity: dragDirection === 'horizontal' && x.get() > 40 ? 1 : 0 
             }}
           >
@@ -484,9 +482,8 @@ export default function QuizBuilder() {
           </motion.div>
           
           <motion.div
-            className="absolute inset-y-0 right-0 w-20 bg-red-500 flex items-center justify-center"
-            initial={{ opacity: 0 }}
-            animate={{ 
+            className="absolute inset-y-0 right-0 w-20 bg-red-500 flex items-center justify-center z-0"
+            style={{ 
               opacity: dragDirection === 'horizontal' && x.get() < -40 ? 1 : 0 
             }}
           >
@@ -659,7 +656,7 @@ export default function QuizBuilder() {
         <div className="p-4 bg-gray-50 min-h-screen">
           <div
             ref={questionListRef}
-            className="space-y-4 pb-20 max-w-2xl mx-auto"
+            className="pb-20 max-w-2xl mx-auto"
           >
             {quiz.questions.length === 0 ? (
               <div className="text-center py-12">
@@ -679,16 +676,7 @@ export default function QuizBuilder() {
                   </p>
                 </div>
                 {quiz.questions.map((question, index) => (
-                  <motion.div
-                    key={question.id}
-                    layout
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <StudentQuestionCard question={question} index={index} />
-                  </motion.div>
+                  <StudentQuestionCard key={question.id} question={question} index={index} />
                 ))}
               </>
             )}
