@@ -1,9 +1,7 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Roboto } from "next/font/google";
-import { motion, PanInfo, useMotionValue, useTransform, AnimatePresence } from "framer-motion";
+import { Roboto } from 'next/font/google';
 import {
   MdAdd as Plus,
   MdClose as X,
@@ -15,13 +13,12 @@ import {
   MdSave as Save,
   MdDescription as FileText,
   MdDelete as Trash2,
-  MdEdit as Edit,
 } from "react-icons/md";
 
 const roboto = Roboto({
-  weight: ["300", "400", "500", "700"],
-  subsets: ["latin"],
-  display: "swap",
+  weight: ['300', '400', '500', '700'],
+  subsets: ['latin'],
+  display: 'swap',
 });
 
 interface Question {
@@ -59,14 +56,11 @@ export default function QuizBuilder() {
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showQuestionForm, setShowQuestionForm] = useState(false);
+  const [draggedQuestion, setDraggedQuestion] = useState<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
     "saved",
   );
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(
-    null,
-  );
-  const [showQuestionTypes, setShowQuestionTypes] = useState(false);
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [previewMode, setPreviewMode] = useState<{ [key: string]: boolean }>({});
 
   const questionFormRef = useRef<HTMLDivElement>(null);
   const questionListRef = useRef<HTMLDivElement>(null);
@@ -97,35 +91,18 @@ export default function QuizBuilder() {
     }
   }, []);
 
-  // Close question types when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (showQuestionTypes && !(event.target as Element).closest('.floating-add-container')) {
-        setShowQuestionTypes(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showQuestionTypes]);
-
   const updateQuiz = useCallback((updates: Partial<Quiz>) => {
     setQuiz((prev) => ({ ...prev, ...updates, updatedAt: new Date() }));
     setSaveStatus("unsaved");
   }, []);
 
-  const addQuestion = (questionType: Question["type"] = "multiple-choice") => {
+  const addQuestion = () => {
     const newQuestion: Question = {
       id: "q-" + Date.now(),
-      type: questionType,
+      type: "multiple-choice",
       question: "",
-      options: questionType === "multiple-choice" ? ["", "", "", ""] : undefined,
-      correctAnswer: 
-        questionType === "true-false" 
-          ? "true" 
-          : questionType === "multiple-choice" 
-            ? 0 
-            : "",
+      options: ["", "", "", ""],
+      correctAnswer: 0,
       characterLimit: CHARACTER_LIMITS.question,
     };
 
@@ -135,7 +112,6 @@ export default function QuizBuilder() {
 
     setCurrentQuestionIndex(quiz.questions.length);
     setShowQuestionForm(true);
-    setShowQuestionTypes(false);
   };
 
   const updateQuestion = (index: number, updates: Partial<Question>) => {
@@ -144,19 +120,45 @@ export default function QuizBuilder() {
     updateQuiz({ questions: updatedQuestions });
   };
 
-  const deleteQuestion = (questionId: string) => {
-    const updatedQuestions = quiz.questions.filter((q) => q.id !== questionId);
+  const deleteQuestion = (index: number) => {
+    const updatedQuestions = quiz.questions.filter((_, i) => i !== index);
     updateQuiz({ questions: updatedQuestions });
-    setShowDeleteConfirm(null);
+
+    if (currentQuestionIndex >= updatedQuestions.length) {
+      setCurrentQuestionIndex(Math.max(0, updatedQuestions.length - 1));
+    }
   };
 
   const reorderQuestions = (fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex) return;
-    
     const updatedQuestions = [...quiz.questions];
     const [movedQuestion] = updatedQuestions.splice(fromIndex, 1);
     updatedQuestions.splice(toIndex, 0, movedQuestion);
     updateQuiz({ questions: updatedQuestions });
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedQuestion(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedQuestion !== null && draggedQuestion !== dropIndex) {
+      reorderQuestions(draggedQuestion, dropIndex);
+    }
+    setDraggedQuestion(null);
+  };
+
+  const togglePreview = (questionId: string) => {
+    setPreviewMode(prev => ({
+      ...prev,
+      [questionId]: !prev[questionId]
+    }));
   };
 
   const QuestionForm = ({
@@ -197,7 +199,7 @@ export default function QuizBuilder() {
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold">Question {index + 1}</h3>
           <button
-            onClick={() => deleteQuestion(localQuestion.id)}
+            onClick={() => deleteQuestion(index)}
             className="p-2 text-red-500 hover:bg-red-50 rounded-full"
           >
             <Trash2 size={20} />
@@ -350,243 +352,100 @@ export default function QuizBuilder() {
     );
   };
 
-  const StudentQuestionCard = ({
-    question,
-    index,
-  }: {
-    question: Question;
-    index: number;
-  }) => {
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragDirection, setDragDirection] = useState<'horizontal' | 'vertical' | null>(null);
-    const [initialDirection, setInitialDirection] = useState<'horizontal' | 'vertical' | null>(null);
-
-    const handleDragStart = () => {
-      setIsDragging(true);
-      setDraggedIndex(index);
-      setDragDirection(null);
-      setInitialDirection(null);
-    };
-
-    const handleDrag = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-      // Only set direction once at the beginning of the drag
-      if (!initialDirection) {
-        const deltaX = Math.abs(info.offset.x);
-        const deltaY = Math.abs(info.offset.y);
-        
-        if (deltaX > 20 || deltaY > 20) {
-          const direction = deltaX > deltaY ? 'horizontal' : 'vertical';
-          setInitialDirection(direction);
-          setDragDirection(direction);
-        }
-      }
-    };
-
-    const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-      const deltaX = info.offset.x;
-      const deltaY = info.offset.y;
-      const velocityX = info.velocity.x;
-      const velocityY = info.velocity.y;
-
-      if (initialDirection === 'horizontal') {
-        // Handle horizontal swipe actions
-        const threshold = 100;
-        const velocityThreshold = 400;
-        
-        if (deltaX > threshold || velocityX > velocityThreshold) {
-          // Swipe right - Edit
-          setCurrentQuestionIndex(index);
-          setShowQuestionForm(true);
-        } else if (deltaX < -threshold || velocityX < -velocityThreshold) {
-          // Swipe left - Delete
-          setShowDeleteConfirm(question.id);
-        }
-      } else if (initialDirection === 'vertical') {
-        // Handle vertical drag for reordering
-        const cardHeight = 150;
-        const threshold = cardHeight / 2;
-        
-        if (Math.abs(deltaY) > threshold) {
-          const direction = deltaY > 0 ? 1 : -1;
-          const newIndex = Math.max(0, Math.min(quiz.questions.length - 1, index + direction));
-          
-          if (newIndex !== index) {
-            reorderQuestions(index, newIndex);
-          }
-        }
-      }
-
-      // Reset states
-      setIsDragging(false);
-      setDraggedIndex(null);
-      setDragDirection(null);
-      setInitialDirection(null);
-    };
-
+  const QuestionPreview = ({ question, index }: { question: Question; index: number }) => {
     return (
-      <motion.div
-        className="relative mb-4"
-        layout
-        layoutId={question.id}
-      >
-        <motion.div
-          className="bg-white rounded-xl border border-gray-200 overflow-hidden relative"
-          drag={dragDirection || true}
-          dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-          dragElastic={0.2}
-          dragMomentum={false}
-          onDragStart={handleDragStart}
-          onDrag={handleDrag}
-          onDragEnd={handleDragEnd}
-          whileDrag={{ 
-            scale: 1.05,
-            zIndex: 50,
-            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)"
-          }}
-          animate={{
-            x: isDragging && dragDirection === 'horizontal' ? 0 : 0,
-            y: isDragging && dragDirection === 'vertical' ? 0 : 0,
-            scale: isDragging ? 1.02 : 1,
-          }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        >
-          {/* Swipe action indicators */}
-          <AnimatePresence>
-            {isDragging && dragDirection === 'horizontal' && (
-              <>
-                <motion.div
-                  className="absolute inset-y-0 left-0 w-20 bg-blue-500 flex items-center justify-center z-0"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  <Edit size={24} className="text-white" />
-                </motion.div>
-                
-                <motion.div
-                  className="absolute inset-y-0 right-0 w-20 bg-red-500 flex items-center justify-center z-0"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  <Trash2 size={24} className="text-white" />
-                </motion.div>
-              </>
-            )}
-          </AnimatePresence>
+      <div className="bg-white rounded-lg border-2 border-blue-200 p-6 shadow-lg">
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-lg font-semibold text-gray-900">Question {index + 1}</span>
+            <span className="text-sm text-gray-500">Preview Mode</span>
+          </div>
+          <h3 className="text-xl font-medium text-gray-800 mb-4">{question.question}</h3>
+          
+          {question.type === "image-based" && question.imageUrl && (
+            <div className="mb-4">
+              <img
+                src={question.imageUrl}
+                alt="Question"
+                className="w-full h-48 object-cover rounded-lg border border-gray-200"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </div>
+          )}
+        </div>
 
-          <div className="p-6 relative bg-white">
-            {/* Question header with drag handle */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-3">
-                <div className="cursor-grab active:cursor-grabbing touch-manipulation">
-                  <GripVertical size={20} className="text-gray-400" />
-                </div>
-                <span className="text-lg font-semibold text-gray-900">
-                  Question {index + 1}
-                </span>
-                <span
-                  className={`text-xs px-3 py-1 rounded-full font-medium ${
-                    question.type === "multiple-choice"
-                      ? "bg-blue-100 text-blue-700"
-                      : question.type === "true-false"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-purple-100 text-purple-700"
+        {question.type === "multiple-choice" && question.options && (
+          <div className="space-y-3">
+            {question.options.map((option, optIndex) => (
+              option.trim() && (
+                <div
+                  key={optIndex}
+                  className={`p-3 rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300 ${
+                    question.correctAnswer === optIndex
+                      ? "border-green-400 bg-green-50"
+                      : "border-gray-200 bg-gray-50"
                   }`}
                 >
-                  {question.type === "multiple-choice"
-                    ? "Multiple Choice"
-                    : question.type === "true-false"
-                      ? "True/False"
-                      : "Image-Based"}
-                </span>
-              </div>
-            </div>
-
-            {/* Question text */}
-            <div className="mb-6">
-              <h3 className="text-xl font-medium text-gray-800 leading-relaxed">
-                {question.question || "Untitled question"}
-              </h3>
-            </div>
-
-            {/* Image for image-based questions */}
-            {question.type === "image-based" && question.imageUrl && (
-              <div className="mb-6">
-                <img
-                  src={question.imageUrl}
-                  alt="Question illustration"
-                  className="w-full h-48 object-cover rounded-lg border border-gray-200"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              </div>
-            )}
-
-            {/* Answer options */}
-            {question.type === "multiple-choice" && question.options && (
-              <div className="space-y-3">
-                {question.options.map(
-                  (option, optIndex) =>
-                    option.trim() && (
-                      <div
-                        key={optIndex}
-                        className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all"
-                      >
-                        <div className="flex items-center">
-                          <div className="w-5 h-5 rounded-full border-2 border-gray-400 mr-4 flex-shrink-0">
-                            <div className="w-full h-full rounded-full"></div>
-                          </div>
-                          <span className="text-gray-800 text-lg">
-                            {option}
-                          </span>
-                        </div>
-                      </div>
-                    ),
-                )}
-              </div>
-            )}
-
-            {question.type === "true-false" && (
-              <div className="space-y-3">
-                {["True", "False"].map((option) => (
-                  <div
-                    key={option}
-                    className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all"
-                  >
-                    <div className="flex items-center">
-                      <div className="w-5 h-5 rounded-full border-2 border-gray-400 mr-4 flex-shrink-0">
-                        <div className="w-full h-full rounded-full"></div>
-                      </div>
-                      <span className="text-gray-800 text-lg">{option}</span>
+                  <div className="flex items-center">
+                    <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                      question.correctAnswer === optIndex
+                        ? "border-green-500 bg-green-500"
+                        : "border-gray-300"
+                    }`}>
+                      {question.correctAnswer === optIndex && (
+                        <div className="w-2 h-2 bg-white rounded-full m-0.5"></div>
+                      )}
                     </div>
+                    <span className="text-gray-800">{option}</span>
                   </div>
-                ))}
-              </div>
-            )}
-
-            {question.type === "image-based" && (
-              <div className="p-4 bg-gray-50 rounded-lg border-2 border-gray-200">
-                <label className="block text-sm font-medium text-gray-600 mb-2">
-                  Your Answer:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Type your answer here..."
-                  className="w-full p-3 border border-gray-300 rounded-lg text-lg"
-                  disabled
-                />
-              </div>
-            )}
+                </div>
+              )
+            ))}
           </div>
-        </motion.div>
-      </motion.div>
+        )}
+
+        {question.type === "true-false" && (
+          <div className="space-y-3">
+            {["true", "false"].map((option) => (
+              <div
+                key={option}
+                className={`p-3 rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300 ${
+                  question.correctAnswer === option
+                    ? "border-green-400 bg-green-50"
+                    : "border-gray-200 bg-gray-50"
+                }`}
+              >
+                <div className="flex items-center">
+                  <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                    question.correctAnswer === option
+                      ? "border-green-500 bg-green-500"
+                      : "border-gray-300"
+                  }`}>
+                    {question.correctAnswer === option && (
+                      <div className="w-2 h-2 bg-white rounded-full m-0.5"></div>
+                    )}
+                  </div>
+                  <span className="text-gray-800 capitalize">{option}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {question.type === "image-based" && (
+          <div className="p-4 bg-gray-50 rounded-lg border-2 border-gray-200">
+            <p className="text-sm text-gray-600 mb-2">Correct Answer:</p>
+            <p className="text-gray-800 font-medium">{question.correctAnswer}</p>
+          </div>
+        )}
+      </div>
     );
   };
 
   return (
-    <div className={`min-h-screen bg-white ${roboto.className}`}>
+    <div className={`min-h-screen bg-gray-50 ${roboto.className}`}>
       {/* Header */}
       <div className="bg-white shadow-sm border-b sticky top-0 z-40">
         <div className="px-4 py-3">
@@ -604,7 +463,8 @@ export default function QuizBuilder() {
                 className="text-lg font-semibold bg-transparent border-none outline-none w-full"
               />
               <div className="text-xs text-gray-500">
-                {quiz.title.length}/{CHARACTER_LIMITS.title} • {quiz.questions.length} questions
+                {quiz.title.length}/{CHARACTER_LIMITS.title} •{" "}
+                {quiz.questions.length} questions
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -630,11 +490,8 @@ export default function QuizBuilder() {
 
       {/* Question List */}
       {!showQuestionForm && (
-        <div className="p-4 bg-gray-50 min-h-screen">
-          <div
-            ref={questionListRef}
-            className="pb-20 max-w-2xl mx-auto"
-          >
+        <div className="p-4">
+          <div ref={questionListRef} className="space-y-3 pb-20">
             {quiz.questions.length === 0 ? (
               <div className="text-center py-12">
                 <FileText size={48} className="mx-auto text-gray-400 mb-4" />
@@ -646,18 +503,152 @@ export default function QuizBuilder() {
                 </p>
               </div>
             ) : (
-              <>
-                <div className="text-center mb-6">
-                  <p className="text-sm text-gray-500">
-                    Drag vertically to reorder • Swipe right to edit • Swipe left to delete
-                  </p>
+              quiz.questions.map((question, index) => (
+                <div
+                  key={question.id}
+                  className="group"
+                >
+                  {previewMode[question.id] ? (
+                    <div className="animate-in slide-in-from-bottom-4 duration-300">
+                      <QuestionPreview question={question} index={index} />
+                      <div className="flex items-center justify-between mt-3 px-2">
+                        <button
+                          onClick={() => togglePreview(question.id)}
+                          className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                        >
+                          Exit Preview
+                        </button>
+                        <button
+                          onClick={() => {
+                            setCurrentQuestionIndex(index);
+                            setShowQuestionForm(true);
+                          }}
+                          className="text-sm text-gray-600 hover:text-gray-700 font-medium"
+                        >
+                          Edit Question
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, index)}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDrop(e, index)}
+                      className={`bg-gray-50 rounded-xl p-5 border-2 border-transparent hover:border-blue-200 transition-all duration-200 transform hover:scale-[1.02] hover:shadow-md ${
+                        draggedQuestion === index ? "opacity-50 scale-95" : ""
+                      } group-hover:bg-white`}
+                    >
+                      <div className="flex items-start space-x-4">
+                        <div className="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 transition-colors cursor-grab active:cursor-grabbing">
+                          <GripVertical size={16} />
+                        </div>
+                        
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center space-x-3">
+                              <span className="text-sm font-semibold text-gray-900">Question {index + 1}</span>
+                              <span
+                                className={`text-xs px-2 py-1 rounded-full transition-colors ${
+                                  question.type === "multiple-choice"
+                                    ? "bg-blue-100 text-blue-700"
+                                    : question.type === "true-false"
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-purple-100 text-purple-700"
+                                }`}
+                              >
+                                {question.type === "multiple-choice"
+                                  ? "Multiple Choice"
+                                  : question.type === "true-false"
+                                    ? "True/False"
+                                    : "Image-Based"}
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button 
+                                className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePreview(question.id);
+                                }}
+                                title="Preview"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                              </button>
+                              <button 
+                                className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCurrentQuestionIndex(index);
+                                  setShowQuestionForm(true);
+                                }}
+                                title="Edit"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button 
+                                className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded-full hover:bg-red-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteQuestion(index);
+                                }}
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                          
+                          <div className="mb-3">
+                            <p className="text-gray-800 font-medium mb-2 line-clamp-2">
+                              {question.question || "Untitled question"}
+                            </p>
+                            {question.type === "image-based" && question.imageUrl && (
+                              <div className="mb-3">
+                                <img 
+                                  src={question.imageUrl} 
+                                  alt="Question illustration" 
+                                  className="w-full h-32 object-cover rounded-lg border border-gray-200"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = "none";
+                                  }}
+                                />
+                              </div>
+                            )}
+                            <div className="text-sm text-gray-500">
+                              <span>{question.question.length}</span>/{CHARACTER_LIMITS.question} characters
+                            </div>
+                          </div>
+                          
+                          {question.type === "multiple-choice" && question.options && (
+                            <div className="text-sm text-gray-500">
+                              {question.options.filter((opt) => opt.trim()).length} options • 
+                              Correct: Option {(question.correctAnswer as number) + 1}
+                            </div>
+                          )}
+                          
+                          {question.type === "true-false" && (
+                            <div className="text-sm text-gray-500">
+                              Correct answer: <span className="capitalize">{question.correctAnswer as string}</span>
+                            </div>
+                          )}
+                          
+                          {question.type === "image-based" && (
+                            <div className="text-sm text-gray-500">
+                              Answer: {question.correctAnswer as string}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <AnimatePresence>
-                  {quiz.questions.map((question, index) => (
-                    <StudentQuestionCard key={question.id} question={question} index={index} />
-                  ))}
-                </AnimatePresence>
-              </>
+              ))
             )}
           </div>
         </div>
@@ -665,7 +656,7 @@ export default function QuizBuilder() {
 
       {/* Question Form */}
       {showQuestionForm && quiz.questions[currentQuestionIndex] && (
-        <div className="p-4 pb-20 bg-gray-50 min-h-screen">
+        <div className="p-4 pb-20">
           <div className="flex items-center justify-between mb-4">
             <button
               onClick={() => setShowQuestionForm(false)}
@@ -679,7 +670,7 @@ export default function QuizBuilder() {
             <div className="w-10" />
           </div>
 
-          <div className="max-w-2xl mx-auto" ref={questionFormRef}>
+          <div ref={questionFormRef}>
             <QuestionForm
               question={quiz.questions[currentQuestionIndex]}
               index={currentQuestionIndex}
@@ -688,7 +679,7 @@ export default function QuizBuilder() {
 
           {/* Navigation between questions */}
           {quiz.questions.length > 1 && (
-            <div className="flex justify-between mt-4 max-w-2xl mx-auto">
+            <div className="flex justify-between mt-4">
               <button
                 onClick={() => {
                   if (currentQuestionIndex > 0) {
@@ -719,123 +710,13 @@ export default function QuizBuilder() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      <AnimatePresence>
-        {showDeleteConfirm && (
-          <motion.div
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="bg-white rounded-lg p-6 max-w-sm w-full"
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-            >
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Delete Question
-              </h3>
-              <p className="text-gray-600 mb-4">
-                Are you sure you want to delete this question? This action cannot
-                be undone.
-              </p>
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => setShowDeleteConfirm(null)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => deleteQuestion(showDeleteConfirm)}
-                  className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-                >
-                  Delete
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Floating Add Button with Question Type Options */}
-      <div className="floating-add-container fixed bottom-6 right-6 z-50">
-        {/* Question Type Options */}
-        <AnimatePresence>
-          {showQuestionTypes && (
-            <motion.div
-              className="absolute bottom-20 right-0 flex flex-col space-y-3"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-            >
-              {/* Multiple Choice Button */}
-              <motion.button
-                onClick={() => addQuestion("multiple-choice")}
-                className="flex items-center bg-white text-gray-800 px-4 py-3 rounded-xl shadow-lg hover:shadow-xl border border-gray-200 hover:border-blue-300 transition-all group"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-200">
-                  <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                </div>
-                <span className="font-medium whitespace-nowrap">Multiple Choice</span>
-              </motion.button>
-
-              {/* True/False Button */}
-              <motion.button
-                onClick={() => addQuestion("true-false")}
-                className="flex items-center bg-white text-gray-800 px-4 py-3 rounded-xl shadow-lg hover:shadow-xl border border-gray-200 hover:border-green-300 transition-all group"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-green-200">
-                  <Check size={16} className="text-green-600" />
-                </div>
-                <span className="font-medium whitespace-nowrap">True/False</span>
-              </motion.button>
-
-              {/* Image-Based Button */}
-              <motion.button
-                onClick={() => addQuestion("image-based")}
-                className="flex items-center bg-white text-gray-800 px-4 py-3 rounded-xl shadow-lg hover:shadow-xl border border-gray-200 hover:border-purple-300 transition-all group"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-purple-200">
-                  <Image size={16} className="text-purple-600" />
-                </div>
-                <span className="font-medium whitespace-nowrap">Image-Based</span>
-              </motion.button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Main Add Button */}
-        <motion.button
-          onClick={() => setShowQuestionTypes(!showQuestionTypes)}
-          className="w-14 h-14 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 flex items-center justify-center"
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-          animate={{ rotate: showQuestionTypes ? 45 : 0 }}
-        >
-          <Plus size={24} />
-        </motion.button>
-
-        {/* Add Question Label */}
-        {!showQuestionTypes && (
-          <motion.div
-            className="absolute bottom-16 right-0 bg-gray-800 text-white text-sm px-3 py-2 rounded-lg shadow-lg opacity-0 hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap"
-            initial={{ opacity: 0 }}
-            whileHover={{ opacity: 1 }}
-          >
-            Add Question
-            <div className="absolute top-full right-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800"></div>
-          </motion.div>
-        )}
-      </div>
+      {/* Floating Add Button */}
+      <button
+        onClick={addQuestion}
+        className="fixed bottom-6 right-6 w-14 h-14 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 active:scale-95 transition-all z-50 flex items-center justify-center"
+      >
+        <Plus size={24} />
+      </button>
     </div>
   );
 }
