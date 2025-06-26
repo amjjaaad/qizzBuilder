@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
@@ -13,6 +14,7 @@ import {
   MdSave as Save,
   MdDescription as FileText,
   MdDelete as Trash2,
+  MdEdit as Edit,
 } from "react-icons/md";
 
 const roboto = Roboto({
@@ -56,11 +58,11 @@ export default function QuizBuilder() {
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showQuestionForm, setShowQuestionForm] = useState(false);
-  const [draggedQuestion, setDraggedQuestion] = useState<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
     "saved",
   );
-  const [previewMode, setPreviewMode] = useState<{ [key: string]: boolean }>({});
+  const [swipeState, setSwipeState] = useState<{ [key: string]: { x: number; action: 'edit' | 'delete' | null } }>({});
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   const questionFormRef = useRef<HTMLDivElement>(null);
   const questionListRef = useRef<HTMLDivElement>(null);
@@ -120,44 +122,54 @@ export default function QuizBuilder() {
     updateQuiz({ questions: updatedQuestions });
   };
 
-  const deleteQuestion = (index: number) => {
-    const updatedQuestions = quiz.questions.filter((_, i) => i !== index);
+  const deleteQuestion = (questionId: string) => {
+    const updatedQuestions = quiz.questions.filter((q) => q.id !== questionId);
     updateQuiz({ questions: updatedQuestions });
-
-    if (currentQuestionIndex >= updatedQuestions.length) {
-      setCurrentQuestionIndex(Math.max(0, updatedQuestions.length - 1));
-    }
+    setShowDeleteConfirm(null);
+    setSwipeState({});
   };
 
-  const reorderQuestions = (fromIndex: number, toIndex: number) => {
-    const updatedQuestions = [...quiz.questions];
-    const [movedQuestion] = updatedQuestions.splice(fromIndex, 1);
-    updatedQuestions.splice(toIndex, 0, movedQuestion);
-    updateQuiz({ questions: updatedQuestions });
-  };
-
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedQuestion(index);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  };
-
-  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
-    e.preventDefault();
-    if (draggedQuestion !== null && draggedQuestion !== dropIndex) {
-      reorderQuestions(draggedQuestion, dropIndex);
-    }
-    setDraggedQuestion(null);
-  };
-
-  const togglePreview = (questionId: string) => {
-    setPreviewMode(prev => ({
+  const handleTouchStart = (e: React.TouchEvent, questionId: string) => {
+    const touch = e.touches[0];
+    setSwipeState(prev => ({
       ...prev,
-      [questionId]: !prev[questionId]
+      [questionId]: { x: 0, action: null }
+    }));
+  };
+
+  const handleTouchMove = (e: React.TouchEvent, questionId: string) => {
+    const touch = e.touches[0];
+    const startX = e.currentTarget.getBoundingClientRect().left;
+    const deltaX = touch.clientX - startX - 200; // Adjust for card positioning
+    
+    let action: 'edit' | 'delete' | null = null;
+    if (deltaX > 60) {
+      action = 'edit';
+    } else if (deltaX < -60) {
+      action = 'delete';
+    }
+
+    setSwipeState(prev => ({
+      ...prev,
+      [questionId]: { x: Math.max(-120, Math.min(120, deltaX)), action }
+    }));
+  };
+
+  const handleTouchEnd = (questionId: string, questionIndex: number) => {
+    const state = swipeState[questionId];
+    if (!state) return;
+
+    if (state.action === 'edit') {
+      setCurrentQuestionIndex(questionIndex);
+      setShowQuestionForm(true);
+    } else if (state.action === 'delete') {
+      setShowDeleteConfirm(questionId);
+    }
+
+    // Reset swipe state
+    setSwipeState(prev => ({
+      ...prev,
+      [questionId]: { x: 0, action: null }
     }));
   };
 
@@ -199,7 +211,7 @@ export default function QuizBuilder() {
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold">Question {index + 1}</h3>
           <button
-            onClick={() => deleteQuestion(index)}
+            onClick={() => deleteQuestion(localQuestion.id)}
             className="p-2 text-red-500 hover:bg-red-50 rounded-full"
           >
             <Trash2 size={20} />
@@ -352,100 +364,147 @@ export default function QuizBuilder() {
     );
   };
 
-  const QuestionPreview = ({ question, index }: { question: Question; index: number }) => {
+  const StudentQuestionCard = ({ question, index }: { question: Question; index: number }) => {
+    const swipe = swipeState[question.id] || { x: 0, action: null };
+    
     return (
-      <div className="bg-white rounded-lg border-2 border-blue-200 p-6 shadow-lg">
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-lg font-semibold text-gray-900">Question {index + 1}</span>
-            <span className="text-sm text-gray-500">Preview Mode</span>
+      <div className="relative overflow-hidden">
+        {/* Background actions */}
+        <div className="absolute inset-0 flex">
+          {/* Edit action (right swipe) */}
+          <div className={`flex items-center justify-center bg-blue-500 text-white transition-all duration-200 ${
+            swipe.x > 0 ? 'w-24' : 'w-0'
+          }`}>
+            <Edit size={20} />
           </div>
-          <h3 className="text-xl font-medium text-gray-800 mb-4">{question.question}</h3>
           
-          {question.type === "image-based" && question.imageUrl && (
-            <div className="mb-4">
-              <img
-                src={question.imageUrl}
-                alt="Question"
-                className="w-full h-48 object-cover rounded-lg border border-gray-200"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
-              />
-            </div>
-          )}
+          {/* Delete action (left swipe) */}
+          <div className="flex-1"></div>
+          <div className={`flex items-center justify-center bg-red-500 text-white transition-all duration-200 ${
+            swipe.x < 0 ? 'w-24' : 'w-0'
+          }`}>
+            <Trash2 size={20} />
+          </div>
         </div>
 
-        {question.type === "multiple-choice" && question.options && (
-          <div className="space-y-3">
-            {question.options.map((option, optIndex) => (
-              option.trim() && (
-                <div
-                  key={optIndex}
-                  className={`p-3 rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300 ${
-                    question.correctAnswer === optIndex
-                      ? "border-green-400 bg-green-50"
-                      : "border-gray-200 bg-gray-50"
+        {/* Question card */}
+        <div
+          className={`bg-white rounded-xl border border-gray-200 shadow-sm transition-all duration-200 relative ${
+            swipe.action === 'edit' ? 'border-blue-300 shadow-blue-100' : 
+            swipe.action === 'delete' ? 'border-red-300 shadow-red-100' : 
+            'hover:shadow-md'
+          }`}
+          style={{
+            transform: `translateX(${swipe.x}px)`,
+          }}
+          onTouchStart={(e) => handleTouchStart(e, question.id)}
+          onTouchMove={(e) => handleTouchMove(e, question.id)}
+          onTouchEnd={() => handleTouchEnd(question.id, index)}
+        >
+          <div className="p-6">
+            {/* Question header */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <span className="text-lg font-semibold text-gray-900">Question {index + 1}</span>
+                <span
+                  className={`text-xs px-3 py-1 rounded-full font-medium ${
+                    question.type === "multiple-choice"
+                      ? "bg-blue-100 text-blue-700"
+                      : question.type === "true-false"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-purple-100 text-purple-700"
                   }`}
                 >
-                  <div className="flex items-center">
-                    <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
-                      question.correctAnswer === optIndex
-                        ? "border-green-500 bg-green-500"
-                        : "border-gray-300"
-                    }`}>
-                      {question.correctAnswer === optIndex && (
-                        <div className="w-2 h-2 bg-white rounded-full m-0.5"></div>
-                      )}
-                    </div>
-                    <span className="text-gray-800">{option}</span>
-                  </div>
-                </div>
-              )
-            ))}
-          </div>
-        )}
-
-        {question.type === "true-false" && (
-          <div className="space-y-3">
-            {["true", "false"].map((option) => (
-              <div
-                key={option}
-                className={`p-3 rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300 ${
-                  question.correctAnswer === option
-                    ? "border-green-400 bg-green-50"
-                    : "border-gray-200 bg-gray-50"
-                }`}
-              >
-                <div className="flex items-center">
-                  <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
-                    question.correctAnswer === option
-                      ? "border-green-500 bg-green-500"
-                      : "border-gray-300"
-                  }`}>
-                    {question.correctAnswer === option && (
-                      <div className="w-2 h-2 bg-white rounded-full m-0.5"></div>
-                    )}
-                  </div>
-                  <span className="text-gray-800 capitalize">{option}</span>
-                </div>
+                  {question.type === "multiple-choice"
+                    ? "Multiple Choice"
+                    : question.type === "true-false"
+                      ? "True/False"
+                      : "Image-Based"}
+                </span>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
 
-        {question.type === "image-based" && (
-          <div className="p-4 bg-gray-50 rounded-lg border-2 border-gray-200">
-            <p className="text-sm text-gray-600 mb-2">Correct Answer:</p>
-            <p className="text-gray-800 font-medium">{question.correctAnswer}</p>
+            {/* Question text */}
+            <div className="mb-6">
+              <h3 className="text-xl font-medium text-gray-800 leading-relaxed">
+                {question.question || "Untitled question"}
+              </h3>
+            </div>
+
+            {/* Image for image-based questions */}
+            {question.type === "image-based" && question.imageUrl && (
+              <div className="mb-6">
+                <img
+                  src={question.imageUrl}
+                  alt="Question illustration"
+                  className="w-full h-48 object-cover rounded-lg border border-gray-200"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Answer options */}
+            {question.type === "multiple-choice" && question.options && (
+              <div className="space-y-3">
+                {question.options.map((option, optIndex) => (
+                  option.trim() && (
+                    <div
+                      key={optIndex}
+                      className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all"
+                    >
+                      <div className="flex items-center">
+                        <div className="w-5 h-5 rounded-full border-2 border-gray-400 mr-4 flex-shrink-0">
+                          <div className="w-full h-full rounded-full"></div>
+                        </div>
+                        <span className="text-gray-800 text-lg">{option}</span>
+                      </div>
+                    </div>
+                  )
+                ))}
+              </div>
+            )}
+
+            {question.type === "true-false" && (
+              <div className="space-y-3">
+                {["True", "False"].map((option) => (
+                  <div
+                    key={option}
+                    className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all"
+                  >
+                    <div className="flex items-center">
+                      <div className="w-5 h-5 rounded-full border-2 border-gray-400 mr-4 flex-shrink-0">
+                        <div className="w-full h-full rounded-full"></div>
+                      </div>
+                      <span className="text-gray-800 text-lg">{option}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {question.type === "image-based" && (
+              <div className="p-4 bg-gray-50 rounded-lg border-2 border-gray-200">
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Your Answer:
+                </label>
+                <input
+                  type="text"
+                  placeholder="Type your answer here..."
+                  className="w-full p-3 border border-gray-300 rounded-lg text-lg"
+                  disabled
+                />
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     );
   };
 
   return (
-    <div className={`min-h-screen bg-gray-50 ${roboto.className}`}>
+    <div className={`min-h-screen bg-white ${roboto.className}`}>
       {/* Header */}
       <div className="bg-white shadow-sm border-b sticky top-0 z-40">
         <div className="px-4 py-3">
@@ -490,8 +549,8 @@ export default function QuizBuilder() {
 
       {/* Question List */}
       {!showQuestionForm && (
-        <div className="p-4">
-          <div ref={questionListRef} className="space-y-3 pb-20">
+        <div className="p-4 bg-gray-50 min-h-screen">
+          <div ref={questionListRef} className="space-y-4 pb-20 max-w-2xl mx-auto">
             {quiz.questions.length === 0 ? (
               <div className="text-center py-12">
                 <FileText size={48} className="mx-auto text-gray-400 mb-4" />
@@ -503,152 +562,18 @@ export default function QuizBuilder() {
                 </p>
               </div>
             ) : (
-              quiz.questions.map((question, index) => (
-                <div
-                  key={question.id}
-                  className="group"
-                >
-                  {previewMode[question.id] ? (
-                    <div className="animate-in slide-in-from-bottom-4 duration-300">
-                      <QuestionPreview question={question} index={index} />
-                      <div className="flex items-center justify-between mt-3 px-2">
-                        <button
-                          onClick={() => togglePreview(question.id)}
-                          className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                        >
-                          Exit Preview
-                        </button>
-                        <button
-                          onClick={() => {
-                            setCurrentQuestionIndex(index);
-                            setShowQuestionForm(true);
-                          }}
-                          className="text-sm text-gray-600 hover:text-gray-700 font-medium"
-                        >
-                          Edit Question
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, index)}
-                      onDragOver={handleDragOver}
-                      onDrop={(e) => handleDrop(e, index)}
-                      className={`bg-gray-50 rounded-xl p-5 border-2 border-transparent hover:border-blue-200 transition-all duration-200 transform hover:scale-[1.02] hover:shadow-md ${
-                        draggedQuestion === index ? "opacity-50 scale-95" : ""
-                      } group-hover:bg-white`}
-                    >
-                      <div className="flex items-start space-x-4">
-                        <div className="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 transition-colors cursor-grab active:cursor-grabbing">
-                          <GripVertical size={16} />
-                        </div>
-                        
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center space-x-3">
-                              <span className="text-sm font-semibold text-gray-900">Question {index + 1}</span>
-                              <span
-                                className={`text-xs px-2 py-1 rounded-full transition-colors ${
-                                  question.type === "multiple-choice"
-                                    ? "bg-blue-100 text-blue-700"
-                                    : question.type === "true-false"
-                                      ? "bg-green-100 text-green-700"
-                                      : "bg-purple-100 text-purple-700"
-                                }`}
-                              >
-                                {question.type === "multiple-choice"
-                                  ? "Multiple Choice"
-                                  : question.type === "true-false"
-                                    ? "True/False"
-                                    : "Image-Based"}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
-                                className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  togglePreview(question.id);
-                                }}
-                                title="Preview"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                </svg>
-                              </button>
-                              <button 
-                                className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCurrentQuestionIndex(index);
-                                  setShowQuestionForm(true);
-                                }}
-                                title="Edit"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                              </button>
-                              <button 
-                                className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded-full hover:bg-red-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteQuestion(index);
-                                }}
-                                title="Delete"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </div>
-                          
-                          <div className="mb-3">
-                            <p className="text-gray-800 font-medium mb-2 line-clamp-2">
-                              {question.question || "Untitled question"}
-                            </p>
-                            {question.type === "image-based" && question.imageUrl && (
-                              <div className="mb-3">
-                                <img 
-                                  src={question.imageUrl} 
-                                  alt="Question illustration" 
-                                  className="w-full h-32 object-cover rounded-lg border border-gray-200"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = "none";
-                                  }}
-                                />
-                              </div>
-                            )}
-                            <div className="text-sm text-gray-500">
-                              <span>{question.question.length}</span>/{CHARACTER_LIMITS.question} characters
-                            </div>
-                          </div>
-                          
-                          {question.type === "multiple-choice" && question.options && (
-                            <div className="text-sm text-gray-500">
-                              {question.options.filter((opt) => opt.trim()).length} options • 
-                              Correct: Option {(question.correctAnswer as number) + 1}
-                            </div>
-                          )}
-                          
-                          {question.type === "true-false" && (
-                            <div className="text-sm text-gray-500">
-                              Correct answer: <span className="capitalize">{question.correctAnswer as string}</span>
-                            </div>
-                          )}
-                          
-                          {question.type === "image-based" && (
-                            <div className="text-sm text-gray-500">
-                              Answer: {question.correctAnswer as string}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
+              <>
+                <div className="text-center mb-6">
+                  <p className="text-sm text-gray-500">
+                    Swipe right to edit • Swipe left to delete
+                  </p>
                 </div>
-              ))
+                {quiz.questions.map((question, index) => (
+                  <div key={question.id} className="animate-in slide-in-from-bottom-4 duration-300">
+                    <StudentQuestionCard question={question} index={index} />
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </div>
@@ -656,7 +581,7 @@ export default function QuizBuilder() {
 
       {/* Question Form */}
       {showQuestionForm && quiz.questions[currentQuestionIndex] && (
-        <div className="p-4 pb-20">
+        <div className="p-4 pb-20 bg-gray-50 min-h-screen">
           <div className="flex items-center justify-between mb-4">
             <button
               onClick={() => setShowQuestionForm(false)}
@@ -670,7 +595,7 @@ export default function QuizBuilder() {
             <div className="w-10" />
           </div>
 
-          <div ref={questionFormRef}>
+          <div className="max-w-2xl mx-auto" ref={questionFormRef}>
             <QuestionForm
               question={quiz.questions[currentQuestionIndex]}
               index={currentQuestionIndex}
@@ -679,7 +604,7 @@ export default function QuizBuilder() {
 
           {/* Navigation between questions */}
           {quiz.questions.length > 1 && (
-            <div className="flex justify-between mt-4">
+            <div className="flex justify-between mt-4 max-w-2xl mx-auto">
               <button
                 onClick={() => {
                   if (currentQuestionIndex > 0) {
@@ -707,6 +632,34 @@ export default function QuizBuilder() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Delete Question
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to delete this question? This action cannot be undone.
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteQuestion(showDeleteConfirm)}
+                className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
